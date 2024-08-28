@@ -1,71 +1,56 @@
 package api
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"github.com/gorilla/mux"
 	"go.uber.org/zap"
+	"kod/internal/handler"
 	"kod/internal/middleware"
 	"kod/internal/models/config"
-	"kod/internal/service"
-	"kod/internal/storage"
-	"log"
 	"net/http"
-	"os"
-	"os/signal"
 	"time"
 )
 
-var m middleware.Middleware
-
 type API struct {
-	server      *http.Server
-	noteService *service.NoteService
-	middleware  *middleware.Middleware
-	zapLogger   *zap.SugaredLogger
+	server     *http.Server
+	controller *handler.Handler
+	middleware *middleware.Middleware
+	zapLogger  *zap.SugaredLogger
 }
 
-func NewAPI(s storage.Storage, l *zap.SugaredLogger, cfg *config.HttpConfig) *API {
+func NewAPI(c *handler.Handler, m *middleware.Middleware, l *zap.SugaredLogger, hc *config.HttpConfig) *API {
 	return &API{
 		server: &http.Server{
-			Addr:         fmt.Sprintf("%s:%s", cfg.Host, cfg.Port),
+			Addr:         fmt.Sprintf("%s:%s", hc.Host, hc.Port),
 			WriteTimeout: time.Second * 15,
 			ReadTimeout:  time.Second * 15,
 			IdleTimeout:  time.Second * 60,
 		},
-		noteService: service.NewNoteService(s),
-		middleware:  middleware.NewMiddleware(),
-		zapLogger:   l,
+		controller: c,
+		middleware: m,
+		zapLogger:  l,
 	}
 }
 
 func (a *API) Run() {
+	a.zapLogger.Infof("Listening on: %v", a.server.Addr)
 	router := mux.NewRouter()
-	router.Host("api")
-	router.Use(a.middleware.AuthMiddleware)
-	router.HandleFunc("/", a.noteService.HandleWelcome)
-	router.HandleFunc("/notes/{user_id}", a.noteService.HandleGetNotes).Methods("GET")
-	router.HandleFunc("/notes", a.noteService.HandleAddNote).Methods("POST")
+	//router.Host("notes")
+	router.HandleFunc("/", a.controller.HandleWelcome)
+	router.HandleFunc("/signup", a.controller.HandleSignUp).Methods("POST")
+	router.HandleFunc("/signup", a.controller.HandleSignUpPage).Methods("GET")
+	router.HandleFunc("/login", a.controller.HandleLogIn).Methods("POST")
+	router.HandleFunc("/login", a.controller.HandleLogInPage).Methods("GET")
+
+	authRouter := router.PathPrefix("/").Subrouter()
+	authRouter.Use(a.middleware.AuthMiddleware)
+	authRouter.HandleFunc("/get", a.controller.HandleGetNotes).Methods("GET")
+	authRouter.HandleFunc("/add", a.controller.HandleAddNote).Methods("POST")
 	a.server.Handler = router
 
-	//authMiddleware :=
-
-	idleConnClosed := make(chan struct{})
-	go func() {
-		sigint := make(chan os.Signal, 1)
-		signal.Notify(sigint, os.Interrupt)
-		<-sigint
-
-		if err := a.server.Shutdown(context.Background()); err != nil {
-			log.Printf("HTTP server Shutdown: %v", err)
-		}
-		close(idleConnClosed)
-	}()
-
+	//TODO: gracefull shutdown
 	if err := a.server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-		log.Fatalf("HTTP server ListenAndServe: %v", err)
+		a.zapLogger.Fatalf("HTTP server ListenAndServe: %v", err)
 	}
-
-	<-idleConnClosed
 }

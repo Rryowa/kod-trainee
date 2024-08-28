@@ -2,12 +2,16 @@ package util
 
 import (
 	"errors"
+	"net/http"
 )
 
 var (
-	ErrNoteNotFound          = errors.New("note not found")
 	ErrInvalidRequestPayload = errors.New("invalid request payload")
 	ErrEmptyNote             = errors.New("note cant be empty")
-	ErrInvalidUserId         = errors.New("invalid user id")
-	ErrUserIdNotProvided     = errors.New("user id not provided")
+	ErrEmptyUsername         = errors.New("empty username")
+	ErrEmptyPassword         = errors.New("empty password")
 )
+
+func HandleHttpError(w http.ResponseWriter, msg string, status int) {
+	http.Error(w, msg, status)
+}

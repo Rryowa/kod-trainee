@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres
+    container_name: pg
+    tty: true
+    env_file:
+      - .env
+    restart: on-failure
+    networks:
+      - postgres
+    ports:
+      - 3333:5432
+
+networks:
+  postgres:
+    driver: bridge

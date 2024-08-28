@@ -3,9 +3,9 @@ package models
 import "time"
 
 type Note struct {
-	Id        string    `json:"id"`
-	UserId    string    `json:"user_id"`
-	Title     string    `json:"title"`
-	Text      string    `json:"text"`
-	CreatedAt time.Time `json:"created_at"`
+	Id        int       `json:"id" db:"id"`
+	UserId    int       `json:"user_id" db:"user_id"`
+	Title     string    `json:"title" db:"title"`
+	Text      string    `json:"text" db:"text"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
 }
