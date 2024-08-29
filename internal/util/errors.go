@@ -1,17 +1,10 @@
 package util
 
-import (
-	"errors"
-	"net/http"
-)
+type MalformedRequest struct {
+	Status int
+	Msg    string
+}
 
-var (
-	ErrInvalidRequestPayload = errors.New("invalid request payload")
-	ErrEmptyNote             = errors.New("note cant be empty")
-	ErrEmptyUsername         = errors.New("empty username")
-	ErrEmptyPassword         = errors.New("empty password")
-)
-
-func HandleHttpError(w http.ResponseWriter, msg string, status int) {
-	http.Error(w, msg, status)
+func (mr *MalformedRequest) Error() string {
+	return mr.Msg
 }

@@ -1,16 +1,12 @@
 package handler
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
-	"github.com/golang-jwt/jwt/v5"
 	"go.uber.org/zap"
-	"html/template"
-	"io"
 	"kod/internal/models"
 	"kod/internal/service"
 	"kod/internal/util"
-	"kod/static"
 	"net/http"
 )
 
@@ -29,50 +25,37 @@ func NewHandler(ns *service.NoteService, us *service.UserService, l *zap.Sugared
 }
 
 func (c *Handler) HandleAddNote(w http.ResponseWriter, r *http.Request) {
-	var note *models.Note
-	if err := json.NewDecoder(r.Body).Decode(&note); err != nil {
-		c.zapLogger.Error(util.ErrInvalidRequestPayload)
-		util.WriteJSON(w, http.StatusBadRequest, util.ErrInvalidRequestPayload)
-		return
-	}
-	if len(note.Text) == 0 {
-		c.zapLogger.Error(util.ErrEmptyNote)
-		util.WriteJSON(w, http.StatusBadRequest, util.ErrEmptyNote)
+	//Middleware already verified a token
+	var note models.Note
+	if err := util.DecodeJSONBody(w, r, &note); err != nil {
+		c.zapLogger.Error(err)
+		var mr *util.MalformedRequest
+		if errors.As(err, &mr) {
+			http.Error(w, mr.Msg, mr.Status)
+		} else {
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		}
 		return
 	}
 
-	userIdCtx, err := util.GetUserIdFromContext(r.Context())
-	note.UserId = userIdCtx
-
-	newNote, err := c.noteService.AddNote(r.Context(), note)
+	newNote, err := c.noteService.AddNote(r, &note)
 	if err != nil {
 		c.zapLogger.Error(err)
-		util.WriteJSON(w, http.StatusUnauthorized, err.Error())
-		return
-	}
-
-	tmpl, err := template.New("addnote").Parse(static.AddNoteTemplate)
-	if err != nil {
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-	err = tmpl.Execute(w, note)
-	if err != nil {
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}
 
 	c.zapLogger.Infof("HandleAddNote Ok")
-	util.WriteJSON(w, http.StatusCreated, newNote)
+	fmt.Fprintf(w, "Note: %+v\n", newNote)
+	util.WriteJSON(w, newNote)
 }
 
 func (c *Handler) HandleGetNotes(w http.ResponseWriter, r *http.Request) {
-	userIdCtx, err := util.GetUserIdFromContext(r.Context())
+	//Middleware already verified a token
+	userCtx, err := util.GetUserFromContext(r)
 	if err != nil {
 		c.zapLogger.Error(err)
-		util.WriteJSON(w, http.StatusUnauthorized, err.Error())
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
-		return
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 
 	//userId, err := strconv.Atoi(userIdCtx)
@@ -83,121 +66,70 @@ func (c *Handler) HandleGetNotes(w http.ResponseWriter, r *http.Request) {
 	//}
 
 	//TODO: replace 0 and 10 with query
-	notes, err := c.noteService.GetNotes(r.Context(), userIdCtx)
+	notes, err := c.noteService.GetNotes(r.Context(), userCtx.Id)
 	if err != nil {
 		c.zapLogger.Errorf("Error getting notes: %s", err)
-		util.WriteJSON(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	tmpl, err := template.New("getnotes").Parse(static.AddNoteTemplate)
-	if err != nil {
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-	err = tmpl.Execute(w, notes)
-	if err != nil {
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	c.zapLogger.Infof("HandleGetNotes Ok")
-	util.WriteJSON(w, http.StatusOK, notes)
+	fmt.Fprintf(w, "Notes: %+v\n", notes)
+	util.WriteJSON(w, notes)
 }
 
-// HandleSignUpPage GET
-func (c *Handler) HandleSignUpPage(w http.ResponseWriter, r *http.Request) {
-	c.HandleAuthorizedUser(w, r, static.SignupTemplate)
-}
-
-// HandleSignUp POST
 func (c *Handler) HandleSignUp(w http.ResponseWriter, r *http.Request) {
-	userForm, err := util.ParseUserForm(r)
-	if err != nil {
+	var user models.User
+	if err := util.DecodeJSONBody(w, r, &user); err != nil {
 		c.zapLogger.Error(err)
-		util.HandleHttpError(w, err.Error(), http.StatusBadRequest)
-
-		//TODO: do i need WriteJson func?
-		//util.WriteJSON(w, http.StatusBadRequest, err)
+		var mr *util.MalformedRequest
+		if errors.As(err, &mr) {
+			http.Error(w, mr.Msg, mr.Status)
+			return
+		}
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
 
-	token, err := c.userService.SignUp(r.Context(), userForm)
+	newUser, err := c.userService.SignUp(r.Context(), &user)
 	if err != nil {
 		c.zapLogger.Errorf("Error SingUp: %s", err)
-		util.HandleHttpError(w, err.Error(), http.StatusInternalServerError)
-		//util.WriteJSON(w, http.StatusInternalServerError, err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	//TODO:?
-	//util.WriteJSONToken(w, token)
 
 	c.zapLogger.Infof("HandleSignUp Ok")
 
-	w.Header().Set("Content-Type", "text/html")
-	fmt.Fprint(w, static.LoginTemplate)
-
-	util.WriteJSON(w, http.StatusCreated, token)
-	//http.Redirect(w, r, "/notes/get", http.StatusSeeOther)
+	//fmt.Fprintf(w, "User: %+v\n", newUser)
+	util.WriteJSON(w, newUser)
 }
 
-// HandleLogInPage GET
-func (c *Handler) HandleLogInPage(w http.ResponseWriter, r *http.Request) {
-	c.HandleAuthorizedUser(w, r, static.LoginTemplate)
-}
-
-// HandleLogIn POST
 func (c *Handler) HandleLogIn(w http.ResponseWriter, r *http.Request) {
-	userForm, err := util.ParseUserForm(r)
-	if err != nil {
+	var user models.User
+	if err := util.DecodeJSONBody(w, r, &user); err != nil {
 		c.zapLogger.Error(err)
-		util.WriteJSON(w, http.StatusBadRequest, err)
+		var mr *util.MalformedRequest
+		if errors.As(err, &mr) {
+			http.Error(w, mr.Msg, mr.Status)
+			return
+		}
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
 
-	token, err := c.userService.LogIn(r.Context(), userForm)
+	token, err := c.userService.LogIn(r, &user)
 	if err != nil {
-		c.zapLogger.Errorf("Error login: %s", err)
-		util.WriteJSON(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	//util.WriteJSONToken(w, token)
-
-	c.zapLogger.Infof("HandleLogIn Ok")
-	util.WriteJSON(w, http.StatusOK, token)
-	http.Redirect(w, r, "/notes/get", http.StatusSeeOther)
-}
-
-func (c *Handler) HandleAuthorizedUser(w http.ResponseWriter, r *http.Request, tmpl string) {
-	tokenString, err := util.GetJwtToken(r)
-	if err != nil {
-		io.WriteString(w, tmpl)
-		return
-	}
-	token, err := util.ValidateJwt(tokenString)
-	if err != nil {
-		io.WriteString(w, tmpl)
+		c.zapLogger.Errorf("Error LogIn: %s", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	userName, _ := token.Claims.(jwt.MapClaims)["userName"].(string)
-	tmplLogged, err := template.New("loggedin").Parse(static.LoggedInTemplate)
-	if err != nil {
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-	err = tmplLogged.Execute(w, userName)
-	if err != nil {
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
+	util.WriteJSON(w, token)
+	//TODO: add redirect to /get
 }
 
 //TODO: LOGOUT
 
 func (c *Handler) HandleWelcome(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html")
-	io.WriteString(w, static.IndexBegin)
-	defer io.WriteString(w, static.IndexEnd)
-	c.zapLogger.Infof("HandleWelcome Ok %v", r.Body)
-	w.Write([]byte("Hello!"))
+	fmt.Fprintf(w, "Message: %+v", "Hello!")
 }

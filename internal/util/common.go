@@ -4,61 +4,103 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/joho/godotenv"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"io"
 	"kod/internal/models"
 	"kod/internal/models/config"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
-func ParseUserForm(r *http.Request) (*models.User, error) {
-	defer r.Body.Close()
-
-	if err := r.ParseForm(); err != nil {
-		return nil, err
-	}
-	user := &models.User{
-		Username: r.FormValue("username"),
-		Password: r.FormValue("password"),
-	}
-
-	if len(user.Username) == 0 {
-		return nil, ErrEmptyUsername
-	} else if len(user.Password) == 0 {
-		return nil, ErrEmptyPassword
+func DecodeJSONBody(w http.ResponseWriter, r *http.Request, dst interface{}) error {
+	ct := r.Header.Get("Content-Type")
+	if ct != "" {
+		mediaType := strings.ToLower(strings.TrimSpace(strings.Split(ct, ";")[0]))
+		if mediaType != "application/json" {
+			msg := "Content-Type header is not application/json"
+			return &MalformedRequest{Status: http.StatusUnsupportedMediaType, Msg: msg}
+		}
 	}
 
-	return user, nil
+	r.Body = http.MaxBytesReader(w, r.Body, 1048576)
+
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+
+	err := dec.Decode(&dst)
+	if err != nil {
+		var syntaxError *json.SyntaxError
+		var unmarshalTypeError *json.UnmarshalTypeError
+
+		switch {
+		case errors.As(err, &syntaxError):
+			msg := fmt.Sprintf("Request body contains badly-formed JSON (at position %d)", syntaxError.Offset)
+			return &MalformedRequest{Status: http.StatusBadRequest, Msg: msg}
+
+		case errors.Is(err, io.ErrUnexpectedEOF):
+			msg := fmt.Sprintf("Request body contains badly-formed JSON")
+			return &MalformedRequest{Status: http.StatusBadRequest, Msg: msg}
+
+		case errors.As(err, &unmarshalTypeError):
+			msg := fmt.Sprintf("Request body contains an invalid value for the %q field (at position %d)", unmarshalTypeError.Field, unmarshalTypeError.Offset)
+			return &MalformedRequest{Status: http.StatusBadRequest, Msg: msg}
+
+		case strings.HasPrefix(err.Error(), "json: unknown field "):
+			fieldName := strings.TrimPrefix(err.Error(), "json: unknown field ")
+			msg := fmt.Sprintf("Request body contains unknown field %s", fieldName)
+			return &MalformedRequest{Status: http.StatusBadRequest, Msg: msg}
+
+		case errors.Is(err, io.EOF):
+			msg := "Request body must not be empty"
+			return &MalformedRequest{Status: http.StatusBadRequest, Msg: msg}
+
+		case err.Error() == "http: request body too large":
+			msg := "Request body must not be larger than 1MB"
+			return &MalformedRequest{Status: http.StatusRequestEntityTooLarge, Msg: msg}
+
+		default:
+			return err
+		}
+	}
+
+	err = dec.Decode(&struct{}{})
+	if !errors.Is(err, io.EOF) {
+		msg := "Request body must only contain a single JSON object"
+		return &MalformedRequest{Status: http.StatusBadRequest, Msg: msg}
+	}
+
+	return nil
 }
 
-func GetUserIdFromContext(ctx context.Context) (int, error) {
-	userID, ok := ctx.Value("user_id").(int)
-	if !ok {
-		return -1, errors.New("you are unauthorized")
-	}
-	return userID, nil
-}
-
-func WriteJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "aplication/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		HandleHttpError(w, err.Error(), http.StatusInternalServerError)
+func WriteJSON(w http.ResponseWriter, v any) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	w.Header().Set("Content-Type", "aplication/json")
+	w.Write(b)
 }
 
-func WriteJSONToken(w http.ResponseWriter, token string) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"token": token,
-	})
+func SetUserContext(r *http.Request, user *models.User) *http.Request {
+	ctx := context.WithValue(r.Context(), "user", user)
+	return r.WithContext(ctx)
+}
+
+func GetUserFromContext(r *http.Request) (*models.User, error) {
+	user, ok := r.Context().Value("user").(*models.User)
+	if !ok {
+		return nil, errors.New("there is no user in context")
+	}
+	return user, nil
 }
 
 func init() {

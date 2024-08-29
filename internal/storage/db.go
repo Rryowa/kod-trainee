@@ -15,5 +15,5 @@ type Storage interface {
 
 type UserStorage interface {
 	AddUser(ctx context.Context, user *models.User) (models.User, error)
-	GetUser(ctx context.Context, userId int) (models.User, error)
+	GetUser(ctx context.Context, userName string) (models.User, error)
 }

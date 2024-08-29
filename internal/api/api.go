@@ -39,11 +39,9 @@ func (a *API) Run() {
 	//router.Host("notes")
 	router.HandleFunc("/", a.controller.HandleWelcome)
 	router.HandleFunc("/signup", a.controller.HandleSignUp).Methods("POST")
-	router.HandleFunc("/signup", a.controller.HandleSignUpPage).Methods("GET")
 	router.HandleFunc("/login", a.controller.HandleLogIn).Methods("POST")
-	router.HandleFunc("/login", a.controller.HandleLogInPage).Methods("GET")
 
-	authRouter := router.PathPrefix("/").Subrouter()
+	authRouter := router.PathPrefix("/notes").Subrouter()
 	authRouter.Use(a.middleware.AuthMiddleware)
 	authRouter.HandleFunc("/get", a.controller.HandleGetNotes).Methods("GET")
 	authRouter.HandleFunc("/add", a.controller.HandleAddNote).Methods("POST")

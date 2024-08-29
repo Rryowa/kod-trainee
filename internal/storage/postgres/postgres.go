@@ -37,12 +37,12 @@ func (d *Database) AddUser(ctx context.Context, user *models.User) (models.User,
 	return newUser, nil
 }
 
-func (d *Database) GetUser(ctx context.Context, userId int) (models.User, error) {
+func (d *Database) GetUser(ctx context.Context, userName string) (models.User, error) {
 	const op = "storage.GetUser"
 	query := `SELECT id, username, password FROM users
-				WHERE id = $1`
+				WHERE username = $1`
 
-	rows, err := d.Pool.Query(ctx, query, userId)
+	rows, err := d.Pool.Query(ctx, query, userName)
 	if err != nil {
 		return models.User{}, fmt.Errorf("%s: %w", op, err)
 	}
@@ -59,10 +59,10 @@ func (d *Database) GetUser(ctx context.Context, userId int) (models.User, error)
 
 func (d *Database) AddNote(ctx context.Context, note models.Note) (models.Note, error) {
 	const op = "storage.AddNote"
-	query := `INSERT INTO notes (user_id, text, created_at)
-				VALUES ($1, $2, $3) returning id, user_id, text, created_at`
+	query := `INSERT INTO notes (user_id, title, text, created_at)
+				VALUES ($1, $2, $3, $4) returning id, user_id, title, text, created_at`
 
-	rows, err := d.Pool.Query(ctx, query, note.Id, note.UserId, note.Text, note.CreatedAt)
+	rows, err := d.Pool.Query(ctx, query, note.UserId, note.Title, note.Text, note.CreatedAt)
 	if err != nil {
 		return models.Note{}, fmt.Errorf("%s: %w", op, err)
 	}
