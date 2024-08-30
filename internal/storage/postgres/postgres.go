@@ -57,12 +57,12 @@ func (d *Database) GetUser(ctx context.Context, userName string) (models.User, e
 	return newUser, nil
 }
 
-func (d *Database) AddNote(ctx context.Context, note models.Note) (models.Note, error) {
+func (d *Database) AddNote(ctx context.Context, note *models.Note) (models.Note, error) {
 	const op = "storage.AddNote"
-	query := `INSERT INTO notes (user_id, title, text, created_at)
-				VALUES ($1, $2, $3, $4) returning id, user_id, title, text, created_at`
+	query := `INSERT INTO notes (user_id, username, title, text, created_at)
+				VALUES ($1, $2, $3, $4, $5) returning id, user_id, username, title, text, created_at`
 
-	rows, err := d.Pool.Query(ctx, query, note.UserId, note.Title, note.Text, note.CreatedAt)
+	rows, err := d.Pool.Query(ctx, query, note.UserId, note.UserName, note.Title, note.Text, note.CreatedAt)
 	if err != nil {
 		return models.Note{}, fmt.Errorf("%s: %w", op, err)
 	}
@@ -83,7 +83,7 @@ func (d *Database) AddNote(ctx context.Context, note models.Note) (models.Note, 
 
 func (d *Database) GetNotes(ctx context.Context, userId, offset, limit int) ([]models.Note, error) {
 	const op = "storage.GetNotes"
-	query := `SELECT id, user_id, text, created_at
+	query := `SELECT id, user_id, username, title, text, created_at
 				FROM notes
 				WHERE user_id=$1
 				ORDER BY created_at DESC
@@ -103,35 +103,6 @@ func (d *Database) GetNotes(ctx context.Context, userId, offset, limit int) ([]m
 	}
 	return notes, err
 }
-
-//// Exists returns true if note exists in cache or repository
-//func (d *Database) Exists(ctx context.Context, id string) (models.Note, bool) {
-//
-//	//if note, ok := d.cacheService.Get(id); ok {
-//	//	return note, true
-//	//}
-//	if note, err := d.get(ctx, id); err == nil {
-//		return note, true
-//	}
-//	return models.Note{}, false
-//}
-//
-//func (d *Database) get(ctx context.Context, userId string) (models.Note, error) {
-//	const op = "storage.Get"
-//	var note models.Note
-//	query := `SELECT id, user_id, text, created_at
-//				FROM notes
-//				WHERE user_id=$1`
-//
-//	if err := pgxscan.Get(ctx, d.Pool, &note, query, userId); err != nil {
-//		if pgxscan.NotFound(err) {
-//			return models.Note{}, util.ErrNoteNotFound
-//		} else {
-//			return models.Note{}, fmt.Errorf("%s: %w", op, err)
-//		}
-//	}
-//	return note, nil
-//}
 
 func NewPostgresRepository(ctx context.Context, cfg *config.DbConfig, zap *zap.SugaredLogger) storage.Storage {
 	connStr := fmt.Sprintf("postgresql://%s:%s@%s:%s/%s?sslmode=disable", cfg.User, cfg.Password, cfg.Host, cfg.Port, cfg.DBName)

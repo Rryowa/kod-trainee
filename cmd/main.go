@@ -8,19 +8,30 @@ import (
 	"kod/internal/service"
 	"kod/internal/storage/postgres"
 	"kod/internal/util"
+	"os/signal"
+	"syscall"
 )
 
 func main() {
-	ctx := context.Background()
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
 	zapLogger := util.NewZapLogger()
+	dbConfig := util.NewDbConfig()
 	httpCfg := util.NewHttpConfig()
+	sesConfig := util.NewSessionConfig()
 
-	storage := postgres.NewPostgresRepository(ctx, util.NewDbConfig(), zapLogger)
+	storage := postgres.NewPostgresRepository(ctx, dbConfig, zapLogger)
+
 	noteService := service.NewNoteService(storage)
-	userService := service.NewUserService(storage)
-	midService := middleware.NewMiddleware(zapLogger)
-	ctrl := handler.NewHandler(noteService, userService, zapLogger)
-	app := api.NewAPI(ctrl, midService, zapLogger, httpCfg)
+	sessionService := service.NewSessionService(sesConfig)
+	userService := service.NewUserService(storage, sessionService)
 
-	app.Run()
+	middlewareService := middleware.NewMiddleware(sessionService, zapLogger)
+
+	handlerController := handler.NewHandler(noteService, userService, zapLogger)
+
+	app := api.NewAPI(handlerController, middlewareService, zapLogger, httpCfg)
+
+	app.Run(ctx)
 }

@@ -3,24 +3,30 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/crypto/bcrypt"
 	"kod/internal/models"
 	"kod/internal/storage"
-	"kod/internal/util"
 	"net/http"
 	"strings"
 )
 
 type UserService struct {
-	storage storage.Storage
+	storage        storage.Storage
+	sessionService *SessionService
 }
 
-func NewUserService(s storage.Storage) *UserService {
-	return &UserService{storage: s}
+func NewUserService(s storage.Storage, ss *SessionService) *UserService {
+	return &UserService{storage: s, sessionService: ss}
 }
 
 func (us *UserService) SignUp(ctx context.Context, user *models.User) (*models.User, error) {
+	_, err := us.storage.GetUser(ctx, user.Username)
+	if err == nil {
+		return nil, errors.New(fmt.Sprintf("user already exists: %s", user.Username))
+	}
+
 	hash, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, err
@@ -36,23 +42,27 @@ func (us *UserService) SignUp(ctx context.Context, user *models.User) (*models.U
 	return &newUser, nil
 }
 
-func (us *UserService) LogIn(r *http.Request, userRequest *models.User) (string, error) {
+func (us *UserService) LogIn(r *http.Request, userRequest *models.User) (*http.Cookie, error) {
 	user, err := us.storage.GetUser(r.Context(), userRequest.Username)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "", errors.New("user not found")
+			return nil, errors.New("user not found")
 		}
-		return "", err
+		return nil, err
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(userRequest.Password)); err != nil {
-		return "", errors.New("invalid password")
+		return nil, errors.New("invalid password")
 	}
 
-	token, err := util.CreateJWT(user.Id, user.Username)
+	token, err := us.sessionService.CreateToken(&user)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return token, nil
+	return us.sessionService.CreateCookie(token)
+}
+
+func (us *UserService) LogOut() (*http.Cookie, error) {
+	return us.sessionService.DeleteCookie()
 }

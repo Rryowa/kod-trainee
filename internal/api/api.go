@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"github.com/gorilla/mux"
@@ -10,6 +11,10 @@ import (
 	"kod/internal/models/config"
 	"net/http"
 	"time"
+)
+
+const (
+	shutdownTimeout = 5 * time.Second
 )
 
 type API struct {
@@ -33,13 +38,11 @@ func NewAPI(c *handler.Handler, m *middleware.Middleware, l *zap.SugaredLogger, 
 	}
 }
 
-func (a *API) Run() {
-	a.zapLogger.Infof("Listening on: %v", a.server.Addr)
+func (a *API) Run(ctx context.Context) {
 	router := mux.NewRouter()
-	//router.Host("notes")
-	router.HandleFunc("/", a.controller.HandleWelcome)
 	router.HandleFunc("/signup", a.controller.HandleSignUp).Methods("POST")
 	router.HandleFunc("/login", a.controller.HandleLogIn).Methods("POST")
+	router.HandleFunc("/logout", a.controller.HandleLogOut).Methods("GET")
 
 	authRouter := router.PathPrefix("/notes").Subrouter()
 	authRouter.Use(a.middleware.AuthMiddleware)
@@ -47,8 +50,35 @@ func (a *API) Run() {
 	authRouter.HandleFunc("/add", a.controller.HandleAddNote).Methods("POST")
 	a.server.Handler = router
 
-	//TODO: gracefull shutdown
-	if err := a.server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-		a.zapLogger.Fatalf("HTTP server ListenAndServe: %v", err)
+	go func() {
+		if err := a.server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			a.zapLogger.Fatalf("HTTP server ListenAndServe: %v", err)
+		}
+	}()
+
+	a.zapLogger.Infof("Listening on: %v\n", a.server.Addr)
+
+	<-ctx.Done()
+	a.zapLogger.Info("Shutting down server...\n")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+
+	if err := a.server.Shutdown(shutdownCtx); err != nil {
+		a.zapLogger.Errorf("shutdown: %v", err)
+	}
+
+	longShutdown := make(chan struct{}, 1)
+
+	go func() {
+		time.Sleep(3 * time.Second)
+		longShutdown <- struct{}{}
+	}()
+
+	select {
+	case <-shutdownCtx.Done():
+		a.zapLogger.Errorf("server shutdown: %v", ctx.Err())
+	case <-longShutdown:
+		a.zapLogger.Infof("finished")
 	}
 }
