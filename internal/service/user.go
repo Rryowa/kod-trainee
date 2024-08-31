@@ -21,6 +21,7 @@ func NewUserService(s storage.Storage, ss *SessionService) *UserService {
 	return &UserService{storage: s, sessionService: ss}
 }
 
+// SignUp Hashes password and adds user to db
 func (us *UserService) SignUp(ctx context.Context, user *models.User) (*models.User, error) {
 	_, err := us.storage.GetUser(ctx, user.Username)
 	if err == nil {
@@ -42,6 +43,7 @@ func (us *UserService) SignUp(ctx context.Context, user *models.User) (*models.U
 	return &newUser, nil
 }
 
+// LogIn Validates user's password, creates a jwt token and cookie
 func (us *UserService) LogIn(r *http.Request, userRequest *models.User) (*http.Cookie, error) {
 	user, err := us.storage.GetUser(r.Context(), userRequest.Username)
 	if err != nil {

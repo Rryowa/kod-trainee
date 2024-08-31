@@ -53,6 +53,7 @@ func (a *API) Run(ctxBackground context.Context) {
 	router.HandleFunc("/signup", a.controller.HandleSignUp).Methods("POST")
 	router.HandleFunc("/login", a.controller.HandleLogIn).Methods("POST")
 	router.HandleFunc("/logout", a.controller.HandleLogOut).Methods("GET")
+	router.Use(a.middleware.RateLimit)
 
 	authRouter := router.PathPrefix("/notes").Subrouter()
 	authRouter.Use(a.middleware.AuthMiddleware)

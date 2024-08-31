@@ -15,6 +15,7 @@ require (
 	github.com/uber/jaeger-lib v2.4.1+incompatible
 	go.uber.org/zap v1.27.0
 	golang.org/x/crypto v0.17.0
+	golang.org/x/time v0.6.0
 )
 
 require (
