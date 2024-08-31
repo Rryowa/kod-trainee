@@ -68,12 +68,12 @@ func DecodeJSONBody(r *http.Request, dst interface{}) error {
 }
 
 func WriteJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "aplication/json")
 	b, err := json.Marshal(v)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	w.Header().Set("Content-Type", "aplication/json")
 	w.Write(b)
 }

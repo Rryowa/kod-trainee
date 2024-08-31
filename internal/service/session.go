@@ -119,8 +119,8 @@ func (s *SessionService) DeleteCookie() (*http.Cookie, error) {
 	return emptyCookie, nil
 }
 
-func GetUserFromContext(r *http.Request) (*models.User, error) {
-	user, ok := r.Context().Value(nameOfUserStruct).(*models.User)
+func GetUserFromContext(ctx context.Context) (*models.User, error) {
+	user, ok := ctx.Value(nameOfUserStruct).(*models.User)
 	if !ok {
 		return nil, errors.New("there is no user in context")
 	}

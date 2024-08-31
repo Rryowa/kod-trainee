@@ -20,8 +20,9 @@ func init() {
 
 func NewHttpConfig() *config.HttpConfig {
 	return &config.HttpConfig{
-		Host: os.Getenv("HTTP_HOST"),
-		Port: os.Getenv("HTTP_PORT"),
+		Host:          os.Getenv("HTTP_HOST"),
+		Port:          os.Getenv("HTTP_PORT"),
+		TelemetryAddr: os.Getenv("TELEMETRY_ADDR"),
 	}
 }
 

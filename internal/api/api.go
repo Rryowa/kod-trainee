@@ -9,7 +9,10 @@ import (
 	"kod/internal/handler"
 	"kod/internal/middleware"
 	"kod/internal/models/config"
+	"kod/telemetry"
 	"net/http"
+	"os/signal"
+	"syscall"
 	"time"
 )
 
@@ -18,10 +21,11 @@ const (
 )
 
 type API struct {
-	server     *http.Server
-	controller *handler.Handler
-	middleware *middleware.Middleware
-	zapLogger  *zap.SugaredLogger
+	server        *http.Server
+	controller    *handler.Handler
+	middleware    *middleware.Middleware
+	zapLogger     *zap.SugaredLogger
+	telemetryAddr string
 }
 
 func NewAPI(c *handler.Handler, m *middleware.Middleware, l *zap.SugaredLogger, hc *config.HttpConfig) *API {
@@ -32,13 +36,19 @@ func NewAPI(c *handler.Handler, m *middleware.Middleware, l *zap.SugaredLogger, 
 			ReadTimeout:  time.Second * 15,
 			IdleTimeout:  time.Second * 60,
 		},
-		controller: c,
-		middleware: m,
-		zapLogger:  l,
+		controller:    c,
+		middleware:    m,
+		zapLogger:     l,
+		telemetryAddr: hc.TelemetryAddr,
 	}
 }
 
-func (a *API) Run(ctx context.Context) {
+func (a *API) Run(ctxBackground context.Context) {
+	ctx, stop := signal.NotifyContext(ctxBackground, syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	go telemetry.Listen(ctx, a.zapLogger, a.telemetryAddr)
+
 	router := mux.NewRouter()
 	router.HandleFunc("/signup", a.controller.HandleSignUp).Methods("POST")
 	router.HandleFunc("/login", a.controller.HandleLogIn).Methods("POST")
@@ -55,7 +65,6 @@ func (a *API) Run(ctx context.Context) {
 			a.zapLogger.Fatalf("HTTP server ListenAndServe: %v", err)
 		}
 	}()
-
 	a.zapLogger.Infof("Listening on: %v\n", a.server.Addr)
 
 	<-ctx.Done()

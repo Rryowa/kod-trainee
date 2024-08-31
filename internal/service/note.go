@@ -2,14 +2,19 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/opentracing/opentracing-go"
 	"io"
 	"kod/internal/models"
 	"kod/internal/storage"
 	"net/http"
+	"strconv"
 	"time"
 )
+
+const defaultLimit = 10
 
 type NoteService struct {
 	storage storage.Storage
@@ -20,15 +25,17 @@ func NewNoteService(s storage.Storage) *NoteService {
 }
 
 func (ns *NoteService) AddNote(r *http.Request, note *models.Note) (models.Note, error) {
+	span, ctx := opentracing.StartSpanFromContext(r.Context(), "service.AddNote")
+	defer span.Finish()
 
-	if err := ns.checkGrammar(note.Title); err != nil {
+	if err := ns.checkGrammar(ctx, note.Title); err != nil {
 		return models.Note{}, fmt.Errorf("title grammar check failed: %v", err)
 	}
-	if err := ns.checkGrammar(note.Text); err != nil {
+	if err := ns.checkGrammar(ctx, note.Text); err != nil {
 		return models.Note{}, fmt.Errorf("text grammar check failed: %v", err)
 	}
 
-	user, err := GetUserFromContext(r)
+	user, err := GetUserFromContext(ctx)
 	if err != nil {
 		return models.Note{}, err
 	}
@@ -37,19 +44,33 @@ func (ns *NoteService) AddNote(r *http.Request, note *models.Note) (models.Note,
 	note.UserName = user.Username
 	note.CreatedAt = time.Now()
 
-	return ns.storage.AddNote(r.Context(), note)
+	return ns.storage.AddNote(ctx, note)
 }
 
 func (ns *NoteService) GetNotes(r *http.Request) ([]models.Note, error) {
-	user, err := GetUserFromContext(r)
+	span, ctx := opentracing.StartSpanFromContext(r.Context(), "service.GetNotes")
+	defer span.Finish()
+
+	pageParam := r.URL.Query().Get("p")
+	page, err := strconv.Atoi(pageParam)
+	if err != nil || page < 1 {
+		page = 1
+	}
+	offset := (page - 1) * defaultLimit
+	limit := defaultLimit
+
+	user, err := GetUserFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	return ns.storage.GetNotes(r.Context(), user.Id, 0, 10)
+	return ns.storage.GetNotes(ctx, user.Id, offset, limit)
 }
 
-func (ns *NoteService) checkGrammar(text string) error {
+func (ns *NoteService) checkGrammar(ctx context.Context, text string) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "service.checkGrammar")
+	defer span.Finish()
+
 	if len(text) > 10000 {
 		return fmt.Errorf("text too long")
 	}
@@ -68,8 +89,7 @@ func (ns *NoteService) checkGrammar(text string) error {
 	}
 	defer resp.Body.Close()
 
-	// Read and parse the response
-	body, err := io.ReadAll(resp.Body) // Use io.ReadAll instead of ioutil.ReadAll
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("failed to read grammar check response: %w", err)
 	}

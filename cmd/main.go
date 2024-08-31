@@ -8,14 +8,10 @@ import (
 	"kod/internal/service"
 	"kod/internal/storage/postgres"
 	"kod/internal/util"
-	"os/signal"
-	"syscall"
 )
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
+	ctx := context.Background()
 	zapLogger := util.NewZapLogger()
 	dbConfig := util.NewDbConfig()
 	httpCfg := util.NewHttpConfig()

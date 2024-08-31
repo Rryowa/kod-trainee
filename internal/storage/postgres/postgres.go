@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/georgysavva/scany/v2/pgxscan"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/opentracing/opentracing-go"
 	"go.uber.org/zap"
 	"kod/internal/models"
 	"kod/internal/models/config"
@@ -19,6 +20,9 @@ type Database struct {
 
 func (d *Database) AddUser(ctx context.Context, user *models.User) (models.User, error) {
 	const op = "storage.AddUser"
+	span, ctx := opentracing.StartSpanFromContext(ctx, op)
+	defer span.Finish()
+
 	query := `INSERT INTO users (username, password)
 				VALUES ($1, $2) returning id, username, password`
 
@@ -39,6 +43,9 @@ func (d *Database) AddUser(ctx context.Context, user *models.User) (models.User,
 
 func (d *Database) GetUser(ctx context.Context, userName string) (models.User, error) {
 	const op = "storage.GetUser"
+	span, ctx := opentracing.StartSpanFromContext(ctx, op)
+	defer span.Finish()
+
 	query := `SELECT id, username, password FROM users
 				WHERE username = $1`
 
@@ -59,6 +66,9 @@ func (d *Database) GetUser(ctx context.Context, userName string) (models.User, e
 
 func (d *Database) AddNote(ctx context.Context, note *models.Note) (models.Note, error) {
 	const op = "storage.AddNote"
+	span, ctx := opentracing.StartSpanFromContext(ctx, op)
+	defer span.Finish()
+
 	query := `INSERT INTO notes (user_id, username, title, text, created_at)
 				VALUES ($1, $2, $3, $4, $5) returning id, user_id, username, title, text, created_at`
 
@@ -83,13 +93,16 @@ func (d *Database) AddNote(ctx context.Context, note *models.Note) (models.Note,
 
 func (d *Database) GetNotes(ctx context.Context, userId, offset, limit int) ([]models.Note, error) {
 	const op = "storage.GetNotes"
+	span, ctx := opentracing.StartSpanFromContext(ctx, op)
+	defer span.Finish()
+
 	query := `SELECT id, user_id, username, title, text, created_at
 				FROM notes
 				WHERE user_id=$1
 				ORDER BY created_at DESC
-				OFFSET $2
-				FETCH NEXT $3 ROWS ONLY`
-
+				LIMIT $3 OFFSET $2`
+	//OFFSET $2
+	//FETCH NEXT $3 ROWS ONLY
 	rows, err := d.Pool.Query(ctx, query, userId, offset, limit)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)

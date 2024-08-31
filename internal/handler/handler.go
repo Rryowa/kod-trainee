@@ -50,7 +50,6 @@ func (c *Handler) HandleAddNote(w http.ResponseWriter, r *http.Request) {
 
 func (c *Handler) HandleGetNotes(w http.ResponseWriter, r *http.Request) {
 	//Middleware already verified a token
-	//TODO: replace 0 and 10 with query
 	notes, err := c.noteService.GetNotes(r)
 	if err != nil {
 		c.zapLogger.Errorf("Error getting notes: %s", err)
